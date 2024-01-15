@@ -6,11 +6,43 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 
+	"github.com/qweijiaq/webook/internal/repository"
+	"github.com/qweijiaq/webook/internal/repository/dao"
+	"github.com/qweijiaq/webook/internal/service"
 	"github.com/qweijiaq/webook/internal/web"
 )
 
 func main() {
+	db := initDB()
+	server := initWebServer()
+
+	u := initUser(db)
+	u.RegisterRoutes(server)
+
+	server.Run(":8080")
+}
+
+// initDB 初始化数据库
+func initDB() *gorm.DB {
+	db, err := gorm.Open(mysql.Open("root:root@tcp(localhost:13316)/webook"))
+	if err != nil {
+		// 只在初始化过程中 panic
+		panic(err)
+	}
+
+	err = dao.InitTable(db)
+	if err != nil {
+		panic(err)
+	}
+
+	return db
+}
+
+// initWebServer 初始化 Web 服务器
+func initWebServer() *gin.Engine {
 	server := gin.Default()
 
 	// 解决跨域问题
@@ -31,8 +63,14 @@ func main() {
 		MaxAge: 12 * time.Hour,
 	}))
 
-	u := web.NewUserHandler()
-	u.RegisterRoutes(server)
+	return server
+}
 
-	server.Run(":8080")
+// initUser 初始化 UserHandler
+func initUser(db *gorm.DB) *web.UserHandler {
+	ud := dao.NewUserDAO(db)
+	repo := repository.NewUserRepository(ud)
+	svc := service.NewUserService(repo)
+	u := web.NewUserHandler(svc)
+	return u
 }

@@ -1,18 +1,23 @@
 package web
 
 import (
+	"github.com/qweijiaq/webook/internal/domain"
+	"net/http"
+
 	regexp "github.com/dlclark/regexp2"
 	"github.com/gin-gonic/gin"
-	"net/http"
+
+	"github.com/qweijiaq/webook/internal/service"
 )
 
 // UserHandler 其上定义用户相关路由
 type UserHandler struct {
+	svc         *service.UserService
 	emailExp    *regexp.Regexp
 	passwordExp *regexp.Regexp
 }
 
-func NewUserHandler() *UserHandler {
+func NewUserHandler(svc *service.UserService) *UserHandler {
 	const (
 		emailRegexPattern    = "邮箱校验正则表达式"
 		passwordRegexPattern = "密码校验正则表达式"
@@ -22,6 +27,7 @@ func NewUserHandler() *UserHandler {
 	passwordExp := regexp.MustCompile(emailRegexPattern, regexp.None)
 
 	return &UserHandler{
+		svc:         svc,
 		emailExp:    emailExp,
 		passwordExp: passwordExp,
 	}
@@ -72,6 +78,16 @@ func (u *UserHandler) Signup(ctx *gin.Context) {
 	}
 	if !ok {
 		ctx.String(http.StatusOK, "密码必须大于8位，包含数字、字母和特殊字符")
+	}
+
+	// 调用一下 svc 的方法
+	err = u.svc.SignUp(ctx, domain.User{
+		Email:    req.Email,
+		Password: req.Password,
+	})
+	if err != nil {
+		ctx.String(http.StatusOK, "系统异常")
+		return
 	}
 
 	ctx.String(http.StatusOK, "注册成功")
