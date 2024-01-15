@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/gin-contrib/cors"
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -13,6 +15,7 @@ import (
 	"github.com/qweijiaq/webook/internal/repository/dao"
 	"github.com/qweijiaq/webook/internal/service"
 	"github.com/qweijiaq/webook/internal/web"
+	"github.com/qweijiaq/webook/internal/web/middleware"
 )
 
 func main() {
@@ -27,7 +30,7 @@ func main() {
 
 // initDB 初始化数据库
 func initDB() *gorm.DB {
-	db, err := gorm.Open(mysql.Open("root:root@tcp(localhost:13316)/webook"))
+	db, err := gorm.Open(mysql.Open("root:123456@tcp(localhost:3306)/webook"))
 	if err != nil {
 		// 只在初始化过程中 panic
 		panic(err)
@@ -62,6 +65,13 @@ func initWebServer() *gin.Engine {
 		},
 		MaxAge: 12 * time.Hour,
 	}))
+
+	// 实现 session 登录校验
+	// 步骤1
+	store := cookie.NewStore([]byte("secret"))
+	server.Use(sessions.Sessions("mysession", store))
+	// 步骤3
+	server.Use(middleware.NewLoginMiddlewareBuilder().IgnorePaths("/users/signup").IgnorePaths("/users/login").Build())
 
 	return server
 }

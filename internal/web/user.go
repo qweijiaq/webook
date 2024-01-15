@@ -1,6 +1,8 @@
 package web
 
 import (
+	"errors"
+	"github.com/gin-contrib/sessions"
 	"github.com/qweijiaq/webook/internal/domain"
 	"net/http"
 
@@ -19,17 +21,15 @@ type UserHandler struct {
 
 func NewUserHandler(svc *service.UserService) *UserHandler {
 	const (
-		emailRegexPattern    = "邮箱校验正则表达式"
-		passwordRegexPattern = "密码校验正则表达式"
+		emailRegexPattern = `\w+([-+.]\w+)*@\w+([-.]\w+)*\.\w+([-.]\w+)*`
+		// passwordRegexPattern 密码包含至少一位数字，字母和特殊字符，且长度 8-16
+		passwordRegexPattern = `^(?![0-9a-zA-Z]+$)(?![a-zA-Z!@#$%^&*]+$)(?![0-9!@#$%^&*]+$)[0-9A-Za-z!@#$%^&*]{8,16}$`
 	)
-
-	emailExp := regexp.MustCompile(emailRegexPattern, regexp.None)
-	passwordExp := regexp.MustCompile(emailRegexPattern, regexp.None)
 
 	return &UserHandler{
 		svc:         svc,
-		emailExp:    emailExp,
-		passwordExp: passwordExp,
+		emailExp:    regexp.MustCompile(emailRegexPattern, regexp.None),
+		passwordExp: regexp.MustCompile(passwordRegexPattern, regexp.None),
 	}
 }
 
@@ -47,7 +47,7 @@ func (u *UserHandler) Signup(ctx *gin.Context) {
 	type SignUpReq struct {
 		Email           string `json:"email"`
 		Password        string `json:"password"`
-		confirmPassword string `json:"confirmPassword"`
+		ConfirmPassword string `json:"confirmPassword"`
 	}
 
 	var req SignUpReq
@@ -64,9 +64,10 @@ func (u *UserHandler) Signup(ctx *gin.Context) {
 	}
 	if !ok {
 		ctx.String(http.StatusOK, "请输入一个合法的邮箱")
+		return
 	}
 
-	if req.confirmPassword != req.Password {
+	if req.ConfirmPassword != req.Password {
 		ctx.String(http.StatusOK, "两次输入的密码不一致")
 		return
 	}
@@ -78,6 +79,7 @@ func (u *UserHandler) Signup(ctx *gin.Context) {
 	}
 	if !ok {
 		ctx.String(http.StatusOK, "密码必须大于8位，包含数字、字母和特殊字符")
+		return
 	}
 
 	// 调用一下 svc 的方法
@@ -85,6 +87,12 @@ func (u *UserHandler) Signup(ctx *gin.Context) {
 		Email:    req.Email,
 		Password: req.Password,
 	})
+
+	if errors.Is(err, service.ErrUserDuplicateEmail) {
+		ctx.String(http.StatusOK, "该邮箱已被注册")
+		return
+	}
+
 	if err != nil {
 		ctx.String(http.StatusOK, "系统异常")
 		return
@@ -97,7 +105,34 @@ func (u *UserHandler) Signup(ctx *gin.Context) {
 }
 
 func (u *UserHandler) Login(ctx *gin.Context) {
+	type LoginReq struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
 
+	var req LoginReq
+	if err := ctx.Bind(&req); err != nil {
+		return
+	}
+
+	user, err := u.svc.Login(ctx, req.Email, req.Password)
+	if errors.Is(err, service.ErrInvalidUserOrPassword) {
+		ctx.String(http.StatusOK, "邮箱或密码错误")
+		return
+	}
+	if err != nil {
+		ctx.String(http.StatusOK, "系统错误")
+		return
+	}
+
+	// 步骤2
+	// 登录成功, 设置 session
+	sess := sessions.Default(ctx)
+	sess.Set("userId", user.Id)
+	sess.Save()
+
+	ctx.String(http.StatusOK, "登录成功")
+	return
 }
 
 func (u *UserHandler) Edit(ctx *gin.Context) {
